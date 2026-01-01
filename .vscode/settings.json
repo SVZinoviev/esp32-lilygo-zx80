@@ -1,4 +1,12 @@
 {
   "C_Cpp.intelliSenseEngine": "default",
-  "idf.currentSetup": "/home/sergio/Progs/esp/esp-idf"
+  "idf.currentSetup": "/home/sergio/Progs/esp/esp-idf",
+  "idf.flashType": "UART",
+  "idf.port": "/dev/ttyACM0",
+  "idf.openOcdConfigs": [
+    "board/esp32s3-builtin.cfg"
+  ],
+  "idf.customExtraVars": {
+    "IDF_TARGET": "esp32s3"
+  }
 }
