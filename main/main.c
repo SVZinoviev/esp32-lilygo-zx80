@@ -25,9 +25,8 @@ static const char *TAG = "main";
 #define DISPLAY_TASK_PRIORITY       2
 
 static SemaphoreHandle_t lvgl_mtx = NULL;
-static lv_disp_draw_buf_t disp_buf; // contains internal graphic buffer(s) called draw buffer(s)
-
-lv_disp_drv_t disp_drv;      // contains callback functions
+static lv_disp_draw_buf_t display_buffer;
+static lv_disp_drv_t display_driver;
 
 static void lvgl_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t *color_map)
 {
@@ -65,7 +64,7 @@ static void set_angle(void * obj, int32_t v)
 /**
  * Create an arc which acts as a loader.
  */
-void lv_example_arc_2(void)
+void lv_example_arc(void)
 {
     /*Create an Arc*/
     lv_obj_t * arc = lv_arc_create(lv_scr_act());
@@ -98,7 +97,7 @@ static void display_task(void *arg)
     lv_obj_set_style_bg_color(scr, lv_color_black(), 0);
     lv_obj_set_style_bg_opa(scr, LV_OPA_100, 0);
 
-    lv_example_arc_2();
+    lv_example_arc();
 
     while (1) {
         // Lock the mutex due to the LVGL APIs are not thread-safe
@@ -126,42 +125,40 @@ void power_turn_on(bool is_on)
     gpio_set_level(BOARD_POWERON, is_on);
 }
 
-void app_main(void)
+/*
+    Inits hardware and LVGL instances
+*/
+static lv_color_t *buffers[2];
+#define BUF_SIZE (LCD_HEIGHT * 20 * sizeof(lv_color_t))
+#define DRAW_BUF_SIZE (LCD_HEIGHT * 20)
+int graphics_init()
 {
-    // --- 1. Hardware Power & GPIO Setup ---
-    power_turn_on(true);
+    int ret = -1;
 
-    // --- 2. Display & Library Initialization ---
-    ESP_LOGI(TAG, "------ Initialize DISPLAY.");
-    display_init();
-
-    ESP_LOGI(TAG, "Initialize LVGL library");
+    display_init(&display_driver);
     lv_init();
 
-    // --- 3. Memory Allocation for Draw Buffers ---
-    lv_color_t *buf1 = (lv_color_t *)heap_caps_malloc(LCD_HEIGHT * 20 * sizeof(lv_color_t), MALLOC_CAP_DMA);
-    assert(buf1);
-    
-    lv_color_t *buf2 = (lv_color_t *)heap_caps_malloc(LCD_HEIGHT * 20 * sizeof(lv_color_t), MALLOC_CAP_DMA);
-    assert(buf2);
-    
-    lv_disp_draw_buf_init(&disp_buf, buf1, buf2, LCD_HEIGHT * 20);
+    ESP_LOGI(TAG, "Allocate LVGL buffers");
+    buffers[0] = (lv_color_t *)heap_caps_malloc(BUF_SIZE, MALLOC_CAP_DMA);
+    assert(buffers[0]);
 
-    // --- 4. LVGL Display Driver Registration ---
-    ESP_LOGI(TAG, "Register display driver to LVGL");
-    lv_disp_drv_init(&disp_drv);
-    
-    disp_drv.hor_res      = LCD_HEIGHT;
-    disp_drv.ver_res      = LCD_WIDTH;
-    disp_drv.flush_cb     = lvgl_flush_cb;
-    disp_drv.draw_buf     = &disp_buf;
-    disp_drv.full_refresh = DISPLAY_FULLRESH;
-    
-    lv_disp_drv_register(&disp_drv);
+    buffers[1] = (lv_color_t *)heap_caps_malloc(BUF_SIZE, MALLOC_CAP_DMA);
+    assert(buffers[1]);
 
-    // --- 5. LVGL Tick Timer Setup ---
-    ESP_LOGI(TAG, "Install LVGL tick timer");
-    const esp_timer_create_args_t lvgl_tick_timer_args = {
+    ESP_LOGI(TAG, "Setup LVGL buffers");
+    lv_disp_draw_buf_init(&display_buffer, buffers[0], buffers[1], DRAW_BUF_SIZE);
+
+    lv_disp_drv_init(&display_driver);
+    display_driver.hor_res      = LCD_HEIGHT;
+    display_driver.ver_res      = LCD_WIDTH;
+    display_driver.flush_cb     = lvgl_flush_cb;
+    display_driver.draw_buf     = &display_buffer;
+    display_driver.full_refresh = DISPLAY_FULLRESH;
+    
+    ESP_LOGI(TAG, "Register LVGL driver");
+    lv_disp_drv_register(&display_driver);
+
+    const esp_timer_create_args_t lvgl_timer_args = {
         .callback               = &increase_lvgl_tick,
         .arg                    = NULL,
         .dispatch_method        = ESP_TIMER_TASK,
@@ -169,15 +166,16 @@ void app_main(void)
         .skip_unhandled_events  = false
     };
     
-    esp_timer_handle_t lvgl_tick_timer = NULL;
-    ESP_ERROR_CHECK(esp_timer_create(&lvgl_tick_timer_args, &lvgl_tick_timer));
-    ESP_ERROR_CHECK(esp_timer_start_periodic(lvgl_tick_timer, LVGL_TICK_PERIOD_MS * 1000));
+    ESP_LOGI(TAG, "Create LVGL timer");
+    esp_timer_handle_t lvgl_timer = NULL;
+    ESP_ERROR_CHECK(esp_timer_create(&lvgl_timer_args, &lvgl_timer));
+    ESP_LOGI(TAG, "Start LVGL timer");
+    ESP_ERROR_CHECK(esp_timer_start_periodic(lvgl_timer, LVGL_TICK_PERIOD_MS * 1000));
 
-    // --- 6. Concurrency & Tasks ---
+    ESP_LOGI(TAG, "Create LVGL mutex");
     lvgl_mtx = xSemaphoreCreateRecursiveMutex();
     assert(lvgl_mtx);
 
-    ESP_LOGI(TAG, "Display task");
     xTaskCreate(
         display_task, 
         "DISP", 
@@ -186,4 +184,16 @@ void app_main(void)
         DISPLAY_TASK_PRIORITY, 
         NULL
     );
+
+    return ret;
+}
+
+void app_main(void)
+{
+    power_turn_on(true);
+    graphics_init();
+
+    while(true) {
+        vTaskDelay(100);
+    }
 }

@@ -25,7 +25,7 @@ static const char *TAG = "TFT";
 
 static esp_lcd_panel_io_handle_t io_handle = NULL;
 static esp_lcd_panel_handle_t panel_handle = NULL;
-extern lv_disp_drv_t disp_drv;
+static lv_disp_drv_t *display_driver;
 
 lcd_cmd_t lcd_st7789v[] = {
     {0x11, {0}, 0 | 0x80},
@@ -51,13 +51,16 @@ void display_push_colors(uint16_t x, uint16_t y, uint16_t width, uint16_t hight,
 
 bool display_notify_lvgl_flush_ready(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_io_event_data_t *edata, void *user_ctx)
 {
-    lv_disp_flush_ready(&disp_drv);
+    lv_disp_flush_ready(display_driver);
     return false;
 }
 
-void display_init()
+void display_init(lv_disp_drv_t *driver)
 {
-    ESP_LOGI(TAG, "============T-Display-S3============");
+    ESP_LOGI(TAG, "ESP32-S3 TFT display init");
+
+    assert(driver != NULL);
+    display_driver = driver;
 
     gpio_config_t rd_gpio_config = {
         .mode = GPIO_MODE_OUTPUT,

@@ -17,7 +17,7 @@
 extern "C" {
 #endif
 
-void display_init();
+void display_init(lv_disp_drv_t *driver);
 void display_push_colors(uint16_t x, uint16_t y, uint16_t width, uint16_t hight, uint16_t *data);
 #ifdef __cplusplus
 }
