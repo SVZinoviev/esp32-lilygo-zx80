@@ -1,6 +1,5 @@
 #pragma once
 
-#define BOARD_POWERON        (gpio_num_t)(15)
 #define BOARD_LCD_BACKLIGHT  38
 #define BOARD_LCD_DATA0      39
 #define BOARD_LCD_DATA1      40
@@ -19,11 +18,6 @@
 #define BOARD_I2C_SDA        18
 #define BOARD_TOUCH_IRQ      16
 #define BOARD_TOUCH_RST      21
+
 #define LCD_WIDTH            170
 #define LCD_HEIGHT           320
-
-#define BOARD_HAS_TOUCH      0
-
-#define DISPLAY_BUFFER_SIZE  (AMOLED_WIDTH * 100)
-
-#define DISPLAY_FULLRESH     false
