@@ -9,6 +9,18 @@
 #ifndef __Z80CONFIG_INCLUDED__
 #define __Z80CONFIG_INCLUDED__
 
+/* Upstream z80emu has a naming mismatch: z80emu.h declares the status enum
+ * as Z80_STATUS_<name> but z80emu.c writes Z80_STATUS_FLAG_<name>. None of
+ * the Z80_CATCH_* paths compile without these aliases. The aliases are pure
+ * preprocessor substitution and resolve to the enum constants at the use
+ * sites in z80emu.c (where z80emu.h has been fully included by then). */
+#define Z80_STATUS_FLAG_HALT         Z80_STATUS_HALT
+#define Z80_STATUS_FLAG_DI           Z80_STATUS_DI
+#define Z80_STATUS_FLAG_EI           Z80_STATUS_EI
+#define Z80_STATUS_FLAG_RETI         Z80_STATUS_RETI
+#define Z80_STATUS_FLAG_RETN         Z80_STATUS_RETN
+#define Z80_STATUS_FLAG_ED_UNDEFINED Z80_STATUS_ED_UNDEFINED
+
 /* Define this macro if the host processor is big endian. */
 
 /* #define Z80_BIG_ENDIAN */
@@ -40,7 +52,9 @@
  * before the undefined opcode.
  */
 
-/* #define Z80_CATCH_ED_UNDEFINED */
+/* Patched for the ZX Spectrum LD-BYTES fast-loader: we plant ED FE at the
+ * ROM's LD-BYTES entry (0x0556) and catch the undefined ED opcode here. */
+#define Z80_CATCH_ED_UNDEFINED
 
 /* The emulator cannot be stopped between prefixed opcodes. This can be a 
  * problem if there is a long sequence of 0xdd and/or 0xfd prefixes. But if
