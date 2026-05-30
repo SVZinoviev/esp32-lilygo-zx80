@@ -138,7 +138,6 @@ int st7789v_esp_driver_init(
   return 0;
 }
 
-// LVGL wrapper to wwrite pixels data to the panel via ESP32 lcd interface
 void st7789v_esp_driver_draw_bitmap(uint16_t x, uint16_t y, uint16_t width,
                                     uint16_t hight, uint16_t *data) {
   esp_lcd_panel_draw_bitmap(panel_handle, x, y, width, hight, data);
