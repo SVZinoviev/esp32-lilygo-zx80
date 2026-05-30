@@ -77,7 +77,7 @@ int st7789v_esp_driver_init(
               BOARD_LCD_DATA7,
           },
       .bus_width = 8,
-      .max_transfer_bytes = LCD_WIDTH * 100 * sizeof(uint16_t),
+      .max_transfer_bytes = LCD_WIDTH * LCD_HEIGHT * sizeof(uint16_t),
       .psram_trans_align = 64,
       .sram_trans_align = 4};
   esp_lcd_new_i80_bus(&i80_bus_config, &i80_bus);
