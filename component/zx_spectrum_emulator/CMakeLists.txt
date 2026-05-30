@@ -7,10 +7,11 @@ endif()
 
 idf_component_register(
     SRCS        "src/zx_spectrum_emulator.c"
+                "src/zx_keyboard.c"
                 "vendor/z80emu/z80emu.c"
     INCLUDE_DIRS "include"
     PRIV_INCLUDE_DIRS "src" "vendor/z80emu"
-    REQUIRES    log
+    REQUIRES    log driver
     EMBED_FILES ${embed_files}
 )
 

@@ -12,6 +12,7 @@
 
 #include <stdint.h>
 
+#include "zx_keyboard.h"
 #include "zx_spectrum_emulator.h"
 
 #ifdef __cplusplus
@@ -54,10 +55,21 @@ extern "C" {
 #define Z80_READ_WORD_INTERRUPT(address, x)   Z80_READ_WORD((address), (x))
 #define Z80_WRITE_WORD_INTERRUPT(address, x)  Z80_WRITE_WORD((address), (x))
 
+/* z80emu hands us only the low byte of the I/O port (the `n` for IN A,(n)
+ * or the `C` for IN r,(C) / INI / IND / INIR / INDR). The Z80 actually places
+ * a full 16-bit address on the bus: A on the high byte for IN A,(n), B on
+ * the high byte for the BC-addressed forms. The ZX Spectrum ULA decodes the
+ * keyboard half-rows from those high address lines, so we must reconstruct
+ * the full port before handing it to the matrix reader.
+ *
+ * `A` and `B` here are the z80emu register accessors from macros.h, which is
+ * always included in the same translation unit (z80emu.c) before this macro
+ * is expanded. `instruction` and `IN_A_N` come from the local int and the
+ * instructions.h enum, both in scope at expansion site. */
 #define Z80_INPUT_BYTE(port, x)                                            \
 {                                                                          \
-    (void)(port);                                                          \
-    (x) = 0xff;                                                            \
+    uint8_t _hi = (instruction == IN_A_N) ? A : B;                         \
+    (x) = zx_keyboard_read(((uint16_t)_hi << 8) | (uint8_t)(port));        \
 }
 
 #define Z80_OUTPUT_BYTE(port, x)                                           \
