@@ -123,35 +123,97 @@ static const char_map_t *lookup_char(int ch)
     return NULL;
 }
 
-#define KEY_PRESS_MS       40   /* needs to span at least one 20 ms ROM scan */
-#define KEY_GAP_MS         60   /* release time to defeat key-repeat debounce */
+/* If no new character arrives for this long, treat the key as released.
+ * Terminal key-repeat is typically 25-30 Hz (~33-40 ms gap), so 80 ms gives
+ * enough margin to keep the matrix pressed across a held key, while still
+ * releasing quickly after a one-off keystroke. */
+#define IDLE_RELEASE_MS    50
+#define ESC_SEQ_TIMEOUT_MS 50
 
 static const char *TAG = "ZXKBD";
+
+static struct {
+    bool      held;
+    zx_key_t  key;
+    bool      caps;
+    bool      sym;
+} s_cur;
+
+static void release_held(void)
+{
+    if (!s_cur.held) return;
+    zx_keyboard_press(s_cur.key, false);
+    if (s_cur.sym)  zx_keyboard_press(ZX_KEY_SYM_SHIFT,  false);
+    if (s_cur.caps) zx_keyboard_press(ZX_KEY_CAPS_SHIFT, false);
+    s_cur.held = false;
+}
+
+/* If the requested key+shifts are already what's pressed, do nothing - the
+ * matrix is already correct, and the next ROM scan will register a continued
+ * hold. Otherwise release whatever was held and press the new combo. */
+static void press_or_refresh(zx_key_t key, bool caps, bool sym)
+{
+    if (s_cur.held && s_cur.key == key && s_cur.caps == caps && s_cur.sym == sym) {
+        return;
+    }
+    release_held();
+    if (caps) zx_keyboard_press(ZX_KEY_CAPS_SHIFT, true);
+    if (sym)  zx_keyboard_press(ZX_KEY_SYM_SHIFT,  true);
+    zx_keyboard_press(key, true);
+    s_cur.held = true;
+    s_cur.key  = key;
+    s_cur.caps = caps;
+    s_cur.sym  = sym;
+}
+
+/* Decode a CSI cursor-arrow sequence (ESC [ A/B/C/D). On the ZX Spectrum
+ * arrow keys are CAPS SHIFT + 5/6/7/8 (Left/Down/Up/Right). */
+static bool press_arrow(uint8_t ch)
+{
+    zx_key_t k;
+    switch (ch) {
+        case 'A': k = ZX_KEY_7; break;  /* Up    */
+        case 'B': k = ZX_KEY_6; break;  /* Down  */
+        case 'C': k = ZX_KEY_8; break;  /* Right */
+        case 'D': k = ZX_KEY_5; break;  /* Left  */
+        default:  return false;
+    }
+    press_or_refresh(k, /*caps=*/true, /*sym=*/false);
+    return true;
+}
 
 static void keyboard_task(void *arg)
 {
     (void)arg;
     uint8_t ch;
     while (1) {
-        int n = usb_serial_jtag_read_bytes(&ch, 1, portMAX_DELAY);
-        if (n != 1) continue;
+        /* While a key is held, only block for IDLE_RELEASE_MS - a timeout
+         * means the user stopped repeating the char, so release. While idle,
+         * block forever (no work to do). */
+        TickType_t wait = s_cur.held ? pdMS_TO_TICKS(IDLE_RELEASE_MS) : portMAX_DELAY;
+        int n = usb_serial_jtag_read_bytes(&ch, 1, wait);
+        if (n != 1) {
+            release_held();
+            continue;
+        }
+
+        if (ch == 0x1B) {
+            uint8_t seq[2];
+            int got = usb_serial_jtag_read_bytes(seq, sizeof(seq),
+                                                 pdMS_TO_TICKS(ESC_SEQ_TIMEOUT_MS));
+            if (got == 2 && seq[0] == '[' && press_arrow(seq[1])) {
+                continue;
+            }
+            ESP_LOGD(TAG, "ignored ESC seq (%d bytes)", got);
+            continue;
+        }
 
         const char_map_t *m = lookup_char(ch);
         if (!m) {
             ESP_LOGD(TAG, "unmapped char 0x%02x", ch);
             continue;
         }
-        if (m->caps) zx_keyboard_press(ZX_KEY_CAPS_SHIFT, true);
-        if (m->sym)  zx_keyboard_press(ZX_KEY_SYM_SHIFT,  true);
-        zx_keyboard_press(m->key, true);
-
-        vTaskDelay(pdMS_TO_TICKS(KEY_PRESS_MS));
-
-        zx_keyboard_press(m->key, false);
-        if (m->sym)  zx_keyboard_press(ZX_KEY_SYM_SHIFT,  false);
-        if (m->caps) zx_keyboard_press(ZX_KEY_CAPS_SHIFT, false);
-
-        vTaskDelay(pdMS_TO_TICKS(KEY_GAP_MS));
+        press_or_refresh(m->key, m->caps, m->sym);
     }
 }
 
