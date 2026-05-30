@@ -1,0 +1,10 @@
+z80emu by Lin Ke-Fong
+Copyright (c) 2012-2017 Lin Ke-Fong
+
+"This code is free, do whatever you want with it."
+
+Upstream: https://github.com/anotherlin/z80emu
+
+Files in this directory are an unmodified vendor copy of z80emu, except for
+this LICENSE.txt note. The user-customizable z80user.h lives in ../../src/
+where it interfaces the emulator with the ZX Spectrum memory bus.
