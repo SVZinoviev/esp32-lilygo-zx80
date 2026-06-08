@@ -10,26 +10,24 @@
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 
-#include "st7789v_esp_driver.h"
+#include "ili9341_esp_driver.h"
 #include "zx_spectrum_emulator.h"
 
-/* Truncated to the 320x170 LCD landscape orientation (LCD_HEIGHT is the long
- * axis after swap_xy). 256 fits the LCD width with 64 px to spare; 170 < 192
- * so 22 ZX scanlines are always dropped. ZX_VIDEO_Y_OFFSET picks which 170
- * lines we show: 0 = top of the screen (border + paper area), 22 = bottom-
- * aligned so the BASIC command-line / status bar at the bottom of the ZX
- * display is visible. Valid range: 0..(192 - RENDER_H) = 0..22. */
+/* Freenove ESP32-S3 ILI9341 LCD in landscape orientation (post-swap_xy) is
+ * 320x240, which comfortably fits the full 256x192 ZX Spectrum screen.
+ * ZX_VIDEO_Y_OFFSET is kept as a configurable knob for cropping experiments
+ * but defaults to 0 - no truncation. */
 #ifndef ZX_VIDEO_Y_OFFSET
-#define ZX_VIDEO_Y_OFFSET  22
+#define ZX_VIDEO_Y_OFFSET  0
 #endif
 
 #define RENDER_W           256
-#define RENDER_H           170
+#define RENDER_H           192
 #define DRAW_X0            0
 #define DRAW_Y0            0
 
 _Static_assert(ZX_VIDEO_Y_OFFSET >= 0 && (ZX_VIDEO_Y_OFFSET + RENDER_H) <= 192,
-               "ZX_VIDEO_Y_OFFSET must be in [0, 22]");
+               "ZX_VIDEO_Y_OFFSET + RENDER_H must not exceed 192");
 
 #define ZX_DIM             0xCD
 #define ZX_BRIGHT          0xFF
@@ -39,9 +37,9 @@ static const char *TAG = "ZXVID";
 static uint16_t          *s_fb;
 static SemaphoreHandle_t  s_done;
 
-/* The ST7789 expects RGB565 with the high byte first on the wire. On a
- * little-endian host, storing 0xRRRRGGGGGGGBBBBB as uint16_t puts the low byte
- * first, so we pre-swap palette entries at compile time. */
+/* The MIPI RAMWR path expects RGB565 with the high byte first on the wire.
+ * On a little-endian host, storing 0xRRRRGGGGGGGBBBBB as uint16_t puts the
+ * low byte first, so we pre-swap palette entries at compile time. */
 #define RGB565(r, g, b)    (uint16_t)((((r) & 0xF8) << 8) | (((g) & 0xFC) << 3) | ((b) >> 3))
 #define SWAP16(x)          (uint16_t)((((x) & 0xFF) << 8) | (((x) >> 8) & 0xFF))
 #define PAL(r, g, b)       SWAP16(RGB565((r), (g), (b)))
@@ -128,7 +126,7 @@ void zx_video_render(void)
         }
     }
 
-    st7789v_esp_driver_draw_bitmap(DRAW_X0,             DRAW_Y0,
+    ili9341_esp_driver_draw_bitmap(DRAW_X0,             DRAW_Y0,
                                    DRAW_X0 + RENDER_W,  DRAW_Y0 + RENDER_H,
                                    s_fb);
 }
