@@ -23,8 +23,8 @@
 
 #define RENDER_W           256
 #define RENDER_H           192
-#define DRAW_X0            0
-#define DRAW_Y0            0
+#define DRAW_X0            ((LCD_WIDTH - RENDER_W) / 2)
+#define DRAW_Y0            ((LCD_HEIGHT - RENDER_H) / 2)
 
 _Static_assert(ZX_VIDEO_Y_OFFSET >= 0 && (ZX_VIDEO_Y_OFFSET + RENDER_H) <= 192,
                "ZX_VIDEO_Y_OFFSET + RENDER_H must not exceed 192");
@@ -65,12 +65,27 @@ static const uint16_t s_palette[16] = {
  *   A7..A5   = y[5:3]   (character row within third)
  *   A4..A0   = xc       (character column)
  */
+union video_addr_u {
+    uint16_t address;
+    struct {
+        uint16_t xcol : 5;
+        uint16_t y3_y5: 3;
+        uint16_t y0_y2: 3;
+        uint16_t y6_y7: 2;
+    };
+};
+
 static inline uint16_t zx_pixel_offset(int xc, int y)
 {
-    return (uint16_t)(((y & 0xC0) << 5)
-                    | ((y & 0x07) << 8)
-                    | ((y & 0x38) << 2)
-                    |  (xc & 0x1F));
+    union video_addr_u va;
+
+    va.address = 0;
+    va.xcol = xc;
+    va.y0_y2 = y & 0x07;
+    va.y3_y5 = (y >> 3) & 0x07;
+    va.y6_y7 = (y >> 6) & 0x03;
+
+    return va.address;
 }
 
 void zx_video_init(void)
@@ -85,6 +100,27 @@ void zx_video_init(void)
     memset(s_fb, 0, fb_bytes);
 
     ESP_LOGI(TAG, "framebuffer %dx%d (%u bytes)", RENDER_W, RENDER_H, (unsigned)fb_bytes);
+
+    /* One-shot full-screen clear so the panel boot garbage doesn't show
+     * around the ZX area. Tiled with a small black buffer to keep the DMA
+     * scratch tiny; serialised through s_done. */
+    const size_t tile = 32;
+    size_t tile_bytes = tile * tile * sizeof(uint16_t);
+    uint16_t *black_tile = heap_caps_malloc(tile_bytes, MALLOC_CAP_DMA);
+    assert(black_tile);
+    memset(black_tile, 0, tile_bytes);
+
+    for (int y = 0; y < LCD_HEIGHT; y += tile) {
+        for (int x = 0; x < LCD_WIDTH; x += tile) {
+            xSemaphoreTake(s_done, portMAX_DELAY);
+            ili9341_esp_driver_draw_bitmap(x, y, tile, tile, black_tile);
+        }
+    }
+    /* Wait for the last tile to drain before freeing the buffer, then
+     * restore the semaphore to "free" for the renderer. */
+    xSemaphoreTake(s_done, portMAX_DELAY);
+    xSemaphoreGive(s_done);
+    heap_caps_free(black_tile);
 }
 
 bool zx_video_on_lcd_trans_done(esp_lcd_panel_io_handle_t io,
@@ -99,6 +135,16 @@ bool zx_video_on_lcd_trans_done(esp_lcd_panel_io_handle_t io,
     return hp_woken == pdTRUE;
 }
 
+union attr_u {
+    uint8_t attr;
+    struct {
+        uint8_t ink         :3;
+        uint8_t paper       :3;
+        uint8_t brightness  :1;
+        uint8_t flash       :1;
+    };
+};
+
 void zx_video_render(void)
 {
     const uint8_t *mem    = zx_spectrum_memory();
@@ -108,17 +154,18 @@ void zx_video_render(void)
     /* Block until the previous push has fully drained the framebuffer over DMA. */
     xSemaphoreTake(s_done, portMAX_DELAY);
 
+    union attr_u attr;
+
     for (int row = 0; row < RENDER_H; row++) {
         int zx_y = row + ZX_VIDEO_Y_OFFSET;
-        const uint8_t *attr_row = attrs + (zx_y >> 3) * 32;
-        uint16_t *out = s_fb + row * RENDER_W;
+        const uint8_t *attr_row = attrs + ((zx_y >> 3) << 5);
+        uint16_t *out = s_fb + (row << 8);
 
         for (int xc = 0; xc < 32; xc++) {
-            uint8_t  byte   = pixels[zx_pixel_offset(xc, zx_y)];
-            uint8_t  attr   = attr_row[xc];
-            uint8_t  bright = (attr & 0x40) ? 8 : 0;
-            uint16_t ink    = s_palette[(attr & 0x07) | bright];
-            uint16_t paper  = s_palette[((attr >> 3) & 0x07) | bright];
+            uint8_t byte = pixels[zx_pixel_offset(xc, zx_y)];
+            attr.attr = attr_row[xc];
+            uint16_t ink = s_palette[attr.ink | (attr.brightness ? 8 : 0)];
+            uint16_t paper = s_palette[attr.paper | (attr.brightness ? 8 : 0)];
 
             for (int b = 0; b < 8; b++) {
                 *out++ = (byte & (0x80 >> b)) ? ink : paper;
@@ -126,7 +173,5 @@ void zx_video_render(void)
         }
     }
 
-    ili9341_esp_driver_draw_bitmap(DRAW_X0,             DRAW_Y0,
-                                   DRAW_X0 + RENDER_W,  DRAW_Y0 + RENDER_H,
-                                   s_fb);
+    ili9341_esp_driver_draw_bitmap(DRAW_X0, DRAW_Y0, RENDER_W, RENDER_H, s_fb);
 }

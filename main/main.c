@@ -10,8 +10,8 @@
 
 void app_main(void)
 {
-    zx_video_init();
     ili9341_esp_driver_init(zx_video_on_lcd_trans_done);
+    zx_video_init();
     zx_keyboard_init();
     zx_spectrum_init();
 
