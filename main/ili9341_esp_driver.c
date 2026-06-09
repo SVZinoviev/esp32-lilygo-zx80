@@ -51,6 +51,7 @@ static const ili9341_cmd_t ili9341_init_sequence[] = {
       0x48, 0x08, 0x0F, 0x0C, 0x31, 0x36, 0x0F},
      15},
     {0x11, {0}, 0x80},                                  /* Sleep Out (delay) */
+    {0x21, {0}, 0x00},                                  /* Invert display */
     {0x29, {0}, 0x80},                                  /* Display On (delay) */
 };
 
@@ -104,9 +105,9 @@ int ili9341_esp_driver_init(
  * y_end), matching how zx_video.c calls it. The MIPI MADCTL_2A/2B/2C trio
  * works on ILI9341 just like ST7789. */
 void ili9341_esp_driver_draw_bitmap(uint16_t x, uint16_t y, uint16_t width,
-                                    uint16_t hight, uint16_t *data) {
-  uint16_t x_end = (uint16_t)(width - 1);
-  uint16_t y_end = (uint16_t)(hight - 1);
+                                    uint16_t height, uint16_t *data) {
+  uint16_t x_end = x + (uint16_t)(width - 1);
+  uint16_t y_end = y + (uint16_t)(height - 1);
 
   uint8_t col[4] = {
       (uint8_t)(x >> 8), (uint8_t)(x & 0xFF),
@@ -118,10 +119,10 @@ void ili9341_esp_driver_draw_bitmap(uint16_t x, uint16_t y, uint16_t width,
   };
 
   size_t pixels =
-      (size_t)(width - x) * (size_t)(hight - y);
+      (size_t)(width) * (size_t)(height);
 
   esp_lcd_panel_io_tx_param(io_handle, 0x2A, col, sizeof(col));    /* CASET  */
   esp_lcd_panel_io_tx_param(io_handle, 0x2B, row, sizeof(row));    /* PASET  */
   esp_lcd_panel_io_tx_color(io_handle, 0x2C, data,
-                            pixels * sizeof(uint16_t));            /* RAMWR  */
+                            pixels << 1);            /* RAMWR  */
 }
